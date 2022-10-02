@@ -1,5 +1,8 @@
 const { expect } = require("chai")
 const { ethers } = require("hardhat")
+const { BN, expectRevert, constants } = require('@openzeppelin/test-helpers');
+
+require('chai').use(require('chai-as-promised')).should()
 
 const DAI = "0x6B175474E89094C44Da98b954EedeAC495271d0F"
 const USDC = "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"
@@ -11,13 +14,33 @@ const WETH_WHALE = "0x06920C9fC643De77B99cB7670A944AD31eaAA260"
 
 const INonfungiblePositionManager = "0xC36442b4a4522E871399CD717aBDD847Ab11FE88";
 
+function bn(x) {
+    return new BN(BigInt(Math.round(parseFloat(x))))
+}
+
+function toWei(x) {
+    return ethers.utils.parseEther(String(x));
+}
+
+function toEth(x) {
+    return ethers.utils.formatEther(String(x));
+}
+
+function toUnits(x, decimal=18) {
+    return ethers.utils.formatUnits(String(x), decimal);
+}
+
+function shouldEqualApprox(x, y, acceptable_diff=2) {
+    const diff = x.sub(y).abs(); 
+    const diffPct = (diff.mul(bn(100))).div(x);
+    acceptable_diff = bn(acceptable_diff);
+    diffPct.should.be.bignumber.lte(acceptable_diff)
+ }
+
 describe("LiquidityExamples", () => {
-  let liquidityExamples
-  let accounts
-  let dai
-  let usdc
-  let NonfungiblePositionManagerContract
-  let lockContract
+  let liquidityExamples,
+  accounts, dai, usdc, NonfungiblePositionManagerContract, 
+  lockContract, lockTokenBalance, userNftIds
 
   before(async () => {
     accounts = await ethers.getSigners(1)
@@ -50,11 +73,6 @@ describe("LiquidityExamples", () => {
 
     await lockTokenContract.setLockAddress(lockContract.address)
 
-    console.log("accounts[0]", accounts[0].address);
-    console.log("liquidityExamples",liquidityExamples.address);
-    console.log("lockContract",lockContract.address);
-    //console.log("",);
-
     dai = await ethers.getContractAt("IERC20", DAI)
     usdc = await ethers.getContractAt("IERC20", USDC)
 
@@ -82,21 +100,12 @@ describe("LiquidityExamples", () => {
     await usdc.connect(usdcWhale).transfer(accounts[0].address, usdcAmount)
   })
 
-  it("mintNewPosition", async () => {
+  it("mintNewPosition: transfers dai, usdc from account0 to liquidity contract", async () => {
     const daiAmount = 100n * 10n ** 18n
     const usdcAmount = 100n * 10n ** 6n
 
-    console.log("daiAmount", daiAmount);
-    console.log("usdcAmount", usdcAmount);
-
-    console.log(
-        "DAI balance before add liquidity",
-        String(await dai.balanceOf(accounts[0].address))
-      )
-      console.log(
-        "USDC balance before add liquidity",
-        String(await usdc.balanceOf(accounts[0].address))
-      )
+    const daiBefore = String(await dai.balanceOf(accounts[0].address))
+    const usdcBefore = String(await usdc.balanceOf(accounts[0].address))
 
     await dai
       .connect(accounts[0])
@@ -107,37 +116,39 @@ describe("LiquidityExamples", () => {
 
     await liquidityExamples.mintNewPosition()
 
-    console.log(
-      "DAI balance after add liquidity",
-      String(await dai.balanceOf(accounts[0].address))
-    )
-    console.log(
-      "USDC balance after add liquidity",
-      String(await usdc.balanceOf(accounts[0].address))
-    )
+    let daiAfter = String(await dai.balanceOf(accounts[0].address));
+    let usdcAfter = String(await usdc.balanceOf(accounts[0].address))
 
-    let ff = await liquidityExamples.getUserNftIds(accounts[0].address)
-
-    console.log(String(ff));
-    console.log(String(lockContract.address));
-
-    console.log("Owner =>", await NonfungiblePositionManagerContract.ownerOf(String(ff)));
-    
-    let gg = await lockContract.transferUniNFT(
-        String(ff), accounts[0].address, {from:accounts[0].address}
-    );
-
-    //let hh = await gg.wait(1)
-
-    console.log("Lock token balance", await lockTokenContract.balanceOf(accounts[0].address));
-
-    console.log(await NonfungiblePositionManagerContract.ownerOf(String(ff)));
+    shouldEqualApprox(bn(daiBefore), bn(daiAfter).add(bn(daiAmount)));
+    shouldEqualApprox(bn(usdcBefore), bn(usdcAfter).add(bn(usdcAmount)));
 
   })
 
+  it('Lock NFTs: transfers NFT from Liquidity to Lock contract', async()=>{
+    userNftIds = String(await liquidityExamples.getUserNftIds(accounts[0].address))
+
+    const NFTOwnerbeforeTransfer = await NonfungiblePositionManagerContract.ownerOf(userNftIds)
+
+    expect(String(NFTOwnerbeforeTransfer)).to.equal(liquidityExamples.address)
+    
+    let nftTransfer = await lockContract.transferUniNFT(
+        userNftIds, accounts[0].address, {from:accounts[0].address}
+    );
+
+    await nftTransfer.wait(1)
+
+    expect(nftTransfer.hash.length).to.equal(66)
+
+    const NFTOwnerAfterTransfer = await NonfungiblePositionManagerContract.ownerOf(userNftIds)
+
+    expect(String(NFTOwnerAfterTransfer)).to.equal(lockContract.address)
+  })
 
 
+  it('account0 Lock token balance should increase after successful lock', async()=>{
+    lockTokenBalance = await lockTokenContract.balanceOf(accounts[0].address)
 
+    lockTokenBalance.toString().should.be.bignumber.gt(bn('0'))
+  })
 
-  
 })
