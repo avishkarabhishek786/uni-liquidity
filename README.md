@@ -8,5 +8,5 @@ Steps:
 npm install
 npx hardhat compile
 $ npx hardhat node --fork https://eth-mainnet.alchemyapi.io/v2/{YOUR_API_KEY}
-npx hardhat test --network localhost
+npx hardhat test test/Liquidity.test.js --network localhost
 ```
