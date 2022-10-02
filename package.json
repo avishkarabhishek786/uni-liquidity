@@ -22,7 +22,9 @@
   },
   "dependencies": {
     "@openzeppelin/contracts": "^3.4.2",
+    "@openzeppelin/test-helpers": "^0.5.16",
     "@uniswap/v3-core": "^1.0.1",
-    "@uniswap/v3-periphery": "^1.4.2"
+    "@uniswap/v3-periphery": "^1.4.2",
+    "chai-as-promised": "^7.1.1"
   }
 }
